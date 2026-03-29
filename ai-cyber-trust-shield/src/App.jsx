@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { analyzeMessage } from './services/aiService';
+import { verifyDomain } from './services/domainService';
 import { db } from './services/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -234,12 +235,36 @@ function App() {
 
     try {
       let payload = inputText;
-      if (scanType === 'company') payload = JSON.stringify(companyDetails);
+      let domainData = null;
+
+      if (scanType === 'company') {
+        payload = JSON.stringify(companyDetails);
+        // Automatically check domain if provided
+        if (companyDetails.url) {
+          try {
+            const domain = companyDetails.url.replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0];
+            domainData = await verifyDomain(domain);
+          } catch (e) { console.warn("Domain parse error", e); }
+        }
+      }
+      
       if (scanType === 'image' || scanType === 'pdf') payload = fileBase64;
 
       const data = await analyzeMessage(payload, scanType);
       
-      // PERSIST TO FIREBASE (For Future Admin Dashboard)
+      // Merge domain data into AI findings if available
+      if (domainData) {
+        data.aiExplanation += ` \n\n[REGISTRY ANALYSIS]: The domain registration date is ${domainData.registrationDate}. Organization: ${domainData.ownerInfo}.`;
+        if (domainData.registrationDate !== "N/A") {
+          const regYear = new Date(domainData.registrationDate).getFullYear();
+          if (regYear === new Date().getFullYear()) {
+             data.redFlags.push("RECENTLY REGISTERED DOMAIN: This domain was created this year.");
+             data.fraudScore = Math.min(100, data.fraudScore + 15);
+          }
+        }
+      }
+
+      // PERSIST TO FIREBASE
       try {
         await addDoc(collection(db, "scans"), {
           caseId: data.caseId,
@@ -255,7 +280,7 @@ function App() {
       setTimeout(() => {
         setResults(data);
         setAppState('RESULTS');
-      }, 4500); 
+      }, 3500); 
     } catch(err) {
       setAppState('SELECTION');
     }

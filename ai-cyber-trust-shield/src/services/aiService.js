@@ -95,13 +95,19 @@ export const CallRealGeminiAPI = async (payload, type) => {
     const text = response.text();
     
     // Extract JSON from the response (sometimes AI adds markdown blocks)
-    const jsonString = text.match(/\{[\s\S]*\}/) ? text.match(/\{[\s\S]*\}/)[0] : text;
-    const data = JSON.parse(jsonString);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const jsonString = jsonMatch ? jsonMatch[0] : text;
     
-    return {
-      caseId: `CS-${Math.floor(10000 + Math.random() * 90000)}`,
-      ...data
-    };
+    try {
+      const data = JSON.parse(jsonString);
+      return {
+        caseId: `CS-${Math.floor(10000 + Math.random() * 90000)}`,
+        ...data
+      };
+    } catch (parseErr) {
+      console.error("AI JSON Parse Error:", parseErr, "Raw Text:", text);
+      throw new Error("Invalid AI Response Format");
+    }
 
   } catch (error) {
     console.error("Gemini API Error:", error);
